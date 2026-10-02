@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+body{margin:0;font:13px system-ui,sans-serif;color:#17343c;background:#fff}
+#chart{max-width:800px;margin:auto;outline:none}svg{display:block;width:100%;height:auto}
+#chart.active{cursor:crosshair}#chart:focus-visible{outline:2px solid #007b83;border-radius:8px}
+#readout{min-height:24px;padding:5px 16px;color:#526970;text-align:center}
+</style></head><body>
+<div id="chart" tabindex="0" role="button" aria-label="Diagramm: Punkt per Klick hinzufügen. Mit Pfeiltasten Position wählen, mit Enter hinzufügen."></div>
+<div id="readout" role="status">Zum Ablesen mit der Maus über das Diagramm fahren.</div>
+<script>
+const chart=document.getElementById('chart'), readout=document.getElementById('readout');
+let enabled=false, cursor={x:8,y:20}, generation=0;
+function send(type,data={}){window.parent.postMessage({isStreamlitMessage:true,type,...data},'*')}
+function height(){send('streamlit:setFrameHeight',{height:Math.ceil(document.body.scrollHeight)})}
+window.addEventListener('message',e=>{
+  if(e.source!==window.parent || e.data.type!=='streamlit:render')return;
+  chart.innerHTML=e.data.args.svg; enabled=e.data.args.enabled; generation=e.data.args.generation;
+  chart.classList.toggle('active',enabled); chart.setAttribute('aria-disabled',String(!enabled));
+  requestAnimationFrame(height);
+});
+function coords(e){
+  const svg=chart.querySelector('svg');if(!svg)return null;
+  const q=new DOMPoint(e.clientX,e.clientY).matrixTransform(svg.getScreenCTM().inverse());
+  const x=(q.x-65)/645*20, y=43-(q.y-76)/760*60;
+  if(x<0||x>20||y < -17||y>43)return null;
+  return {x,y};
+}
+function show(q){
+  const t=q.y*1.006/(1.006+1.86*q.x/1000);
+  readout.textContent=`T ≈ ${t.toFixed(2)} °C · x ≈ ${q.x.toFixed(3)} g/kg`+(enabled?' · Klick fügt einen Punkt hinzu.':' · Punktmodus rechts aktivieren.');
+}
+function add(q){if(enabled)send('streamlit:setComponentValue',{value:{...q,id:crypto.randomUUID(),generation},dataType:'json'})}
+chart.addEventListener('pointermove',e=>{const q=coords(e);if(q){cursor=q;show(q)}});
+chart.addEventListener('click',e=>{const q=coords(e);if(q)add(q)});
+chart.addEventListener('keydown',e=>{
+ const delta=e.shiftKey?1:.1;
+ if(e.key==='ArrowLeft')cursor.x=Math.max(0,cursor.x-delta);
+ else if(e.key==='ArrowRight')cursor.x=Math.min(20,cursor.x+delta);
+ else if(e.key==='ArrowUp')cursor.y=Math.min(43,cursor.y+delta);
+ else if(e.key==='ArrowDown')cursor.y=Math.max(-17,cursor.y-delta);
+ else if(e.key==='Enter'){add(cursor);e.preventDefault();return}else return;
+ e.preventDefault();show(cursor);
+});
+new ResizeObserver(height).observe(chart);
+send('streamlit:componentReady',{apiVersion:1});
+</script></body></html>
